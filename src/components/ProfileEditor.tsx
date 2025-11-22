@@ -46,7 +46,12 @@ export default function ProfileEditor({
 
 	const onSubmit = async (data: any) => {
 		if (initialData?._id) {
-			await updateProfile({ id: initialData._id, ...data });
+			await updateProfile({
+				id: initialData._id,
+				name: data.name,
+				targets: data.targets,
+				config: data.config,
+			});
 		} else {
 			await createProfile(data);
 		}
