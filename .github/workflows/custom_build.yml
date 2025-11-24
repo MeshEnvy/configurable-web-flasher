@@ -177,7 +177,7 @@ jobs:
           
           update_status uploading
           # Upload to R2 with hash as filename
-          aws s3 cp "$BUILD_FILE" "s3://${{ secrets.R2_BUCKET_NAME }}/${{ inputs.build_hash }}.uf2" \
+          aws s3 cp "$BUILD_FILE" "s3://${{ inputs.build_hash }}.uf2" \
             --endpoint-url "$AWS_ENDPOINT_URL"
           
           echo "✅ Uploaded to R2: ${{ inputs.build_hash }}.uf2"
