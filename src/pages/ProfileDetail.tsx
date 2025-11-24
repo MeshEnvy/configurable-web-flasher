@@ -56,6 +56,25 @@ export default function ProfileDetail() {
     }
   }, [categories, activeCategory])
 
+  // Load saved target
+  React.useEffect(() => {
+    if (!id) return
+    const savedTarget = localStorage.getItem(`profile_target_${id}`)
+    if (savedTarget && TARGETS[savedTarget]) {
+      setSelectedTarget(savedTarget)
+      const category = TARGETS[savedTarget].category || 'Other'
+      if (categories.includes(category)) {
+        setActiveCategory(category)
+      }
+    }
+  }, [id, categories])
+
+  // Save target on change
+  React.useEffect(() => {
+    if (!id || !selectedTarget) return
+    localStorage.setItem(`profile_target_${id}`, selectedTarget)
+  }, [id, selectedTarget])
+
   if (!id) {
     return <div>Profile ID required</div>
   }
