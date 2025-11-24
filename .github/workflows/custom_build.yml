@@ -185,7 +185,7 @@ jobs:
           update_status uploading
           # Upload to R2 with hash and correct extension
           wrangler r2 object put "$OBJECT_PATH" \
-            --file "$BUILD_FILE"
+            --file "$BUILD_FILE" --remote
           
           # Update build with artifact path (with leading slash)
           curl -sSf -X POST "$CONVEX_URL/github-webhook" \
