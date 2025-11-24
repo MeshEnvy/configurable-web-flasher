@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+We are in our prototyping phase right now. Do not code for backward compatibility. Prefer breaking changes.
