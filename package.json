@@ -7,7 +7,8 @@
 		"generate:versions": "node scripts/generate-versions.js",
 		"dev": "bun run generate:versions && vite",
 		"build": "bun run generate:versions && tsc && vite build",
-		"lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+		"lint": "biome lint",
+		"lint:fix": "biome lint --fix",
 		"preview": "vite preview",
 		"deploy": "npx convex deploy --cmd 'bun run build' && wrangler deploy"
 	},
