@@ -46,20 +46,26 @@ jobs:
           EOF
           chmod +x /tmp/update_status.sh
       
-      - name: Update Status - Build Started
+      - name: Update Status - Fetching Web Flasher
         shell: bash
         run: |
           source /tmp/update_status.sh
-          update_status checking_out
+          update_status checking_out_web_flasher
 
       - name: Checkout Web Flasher (this repo)
         uses: actions/checkout@v4
+        with:
+          repository: meshtastic/web-flasher
+          ref: ${{ inputs.version }}
+          path: web-flasher
+          submodules: recursive
+          fetch-depth: 1
 
-      - name: Update Status - Checked Out Web Flasher
+      - name: Update Status - Fetching Firmware
         shell: bash
         run: |
           source /tmp/update_status.sh
-          update_status checked_out_web_flasher
+          update_status checking_out_firmware
 
       - name: Checkout Firmware
         uses: actions/checkout@v4
@@ -70,11 +76,11 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Update Status - Checked Out Firmware
+      - name: Update Status - Downloading PlatformIO Cache
         shell: bash
         run: |
           source /tmp/update_status.sh
-          update_status checked_out_firmware
+          update_status downloading_platformio_cache
 
       - name: Cache PlatformIO
         uses: actions/cache@v4
@@ -86,33 +92,33 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pio-
 
+      - name: Update Status - Setting Up Python
+        shell: bash
+        run: |
+          source /tmp/update_status.sh
+          update_status setting_up_python
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
 
-      - name: Update Status - Installing Dependencies
+      - name: Update Status - Installing PlatformIO
         shell: bash
         run: |
           source /tmp/update_status.sh
-          update_status installing_dependencies
+          update_status installing_platformio
 
       - name: Install PlatformIO
         run: |
           python -m pip install --upgrade pip
           pip install platformio
 
-      - name: Update Status - Dependencies Installed
+      - name: Update Status - Building Firmware
         shell: bash
         run: |
           source /tmp/update_status.sh
-          update_status dependencies_installed
-
-      - name: Update Status - Building
-        shell: bash
-        run: |
-          source /tmp/update_status.sh
-          update_status building
+          update_status building_firmware
 
       - name: Build Firmware
         working-directory: firmware
@@ -126,20 +132,32 @@ jobs:
           
           pio run -e ${{ inputs.target }}
 
-      - name: Update Status - Build Complete
-        if: success()
-        shell: bash
-        run: |
-          source /tmp/update_status.sh
-          update_status build_complete
-
-      - name: Install AWS CLI (for R2)
+      - name: Update Status - Preparing Upload
         if: success()
         shell: bash
         run: |
           source /tmp/update_status.sh
           update_status preparing_upload
+
+      - name: Update Status - Installing AWS CLI
+        if: success()
+        shell: bash
+        run: |
+          source /tmp/update_status.sh
+          update_status installing_aws_cli
+
+      - name: Install AWS CLI (for R2)
+        if: success()
+        shell: bash
+        run: |
           pip install awscli
+
+      - name: Update Status - Uploading uf2 to R2
+        if: success()
+        shell: bash
+        run: |
+          source /tmp/update_status.sh
+          update_status uploading_uf2_to_r2
 
       - name: Upload to R2
         if: success()
@@ -150,25 +168,19 @@ jobs:
         shell: bash
         run: |
           source /tmp/update_status.sh
-          update_status uploading
+          update_status locating_build_file
           # Determine file extension based on target (most are .bin, some might be .uf2)
           BUILD_FILE="firmware/.pio/build/${{ inputs.target }}/firmware.bin"
           if [ ! -f "$BUILD_FILE" ]; then
             BUILD_FILE="firmware/.pio/build/${{ inputs.target }}/firmware.uf2"
           fi
           
+          update_status uploading
           # Upload to R2 with hash as filename
           aws s3 cp "$BUILD_FILE" "s3://${{ secrets.R2_BUCKET_NAME }}/${{ inputs.build_hash }}.uf2" \
             --endpoint-url "$AWS_ENDPOINT_URL"
           
           echo "✅ Uploaded to R2: ${{ inputs.build_hash }}.uf2"
-
-      - name: Update Status - Upload Complete
-        if: success()
-        shell: bash
-        run: |
-          source /tmp/update_status.sh
-          update_status upload_complete
 
       - name: Update Build Status - Final
         if: always()
