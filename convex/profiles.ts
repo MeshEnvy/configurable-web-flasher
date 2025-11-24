@@ -54,6 +54,10 @@ export const update = mutation({
       throw new Error('Unauthorized')
     }
 
+    // Get new targets for comparison
+    const newTargets = new Set(args.targets)
+
+    // Update profile
     await ctx.db.patch(args.id, {
       name: args.name,
       targets: args.targets,
@@ -61,6 +65,22 @@ export const update = mutation({
       version: args.version,
       updatedAt: Date.now(),
     })
+
+    // Sync profileBuilds: delete profileBuilds for targets that are no longer in the list
+    const profileBuilds = await ctx.db
+      .query('profileBuilds')
+      .withIndex('by_profile', (q) => q.eq('profileId', args.id))
+      .collect()
+
+    for (const profileBuild of profileBuilds) {
+      if (!newTargets.has(profileBuild.target)) {
+        // Target was removed, delete the profileBuild
+        await ctx.db.delete(profileBuild._id)
+      }
+    }
+
+    // Note: We don't create profileBuilds for new targets here.
+    // User must trigger a build to create profileBuilds for new targets.
   },
 })
 

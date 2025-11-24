@@ -1,6 +1,7 @@
 import { getAuthUserId } from '@convex-dev/auth/server'
 import { v } from 'convex/values'
 import { api } from './_generated/api'
+import type { Id } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import modulesData from './modules.json'
 
@@ -96,39 +97,98 @@ export const triggerBuild = mutation({
         `Computed build hash for ${target}: ${buildHash} (Flags: ${flagsString})`
       )
 
-      // Check cache for existing build
-      const cached = await ctx.db
-        .query('buildCache')
-        .withIndex('by_hash_target', (q) =>
-          q.eq('buildHash', buildHash).eq('target', target)
+      // Mutex logic: Check if build already exists with this hash
+      const build = await ctx.db
+        .query('builds')
+        .withIndex('by_hash', (q) => q.eq('buildHash', buildHash))
+        .first()
+
+      let buildId: Id<'builds'>
+      let shouldDispatch = false
+
+      if (build) {
+        // Build already exists, use it
+        buildId = build._id
+        console.log(`Using existing build ${buildId} for hash ${buildHash}`)
+      } else {
+        // Check cache for existing build
+        const cached = await ctx.db
+          .query('buildCache')
+          .withIndex('by_hash_target', (q) =>
+            q.eq('buildHash', buildHash).eq('target', target)
+          )
+          .first()
+
+        if (cached) {
+          // Use cached artifact, create build with success status
+          const artifactUrl = getR2ArtifactUrl(buildHash)
+          buildId = await ctx.db.insert('builds', {
+            target: target,
+            githubRunId: 0,
+            status: 'success',
+            artifactUrl: artifactUrl,
+            startedAt: Date.now(),
+            completedAt: Date.now(),
+            buildHash: buildHash,
+          })
+          console.log(`Created cached build ${buildId} for hash ${buildHash}`)
+        } else {
+          // Not cached, create new build and dispatch workflow
+          buildId = await ctx.db.insert('builds', {
+            target: target,
+            githubRunId: 0,
+            status: 'queued',
+            startedAt: Date.now(),
+            buildHash: buildHash,
+          })
+          shouldDispatch = true
+          console.log(`Created new build ${buildId} for hash ${buildHash}`)
+        }
+
+        // Handle race condition: if another mutation created the build between our check and insert,
+        // query again to get the existing build (there might be duplicates, but we'll use the first one)
+        const existingBuild = await ctx.db
+          .query('builds')
+          .withIndex('by_hash', (q) => q.eq('buildHash', buildHash))
+          .first()
+
+        if (existingBuild && existingBuild._id !== buildId) {
+          // Another mutation created the build first, use that one instead
+          // Delete the duplicate we just created
+          await ctx.db.delete(buildId)
+          buildId = existingBuild._id
+          shouldDispatch = false
+          console.log(
+            `Race condition detected: using existing build ${existingBuild._id} instead of duplicate`
+          )
+        }
+      }
+
+      // Create or update profileBuild record
+      const existingProfileBuild = await ctx.db
+        .query('profileBuilds')
+        .withIndex('by_profile_target', (q) =>
+          q.eq('profileId', args.profileId).eq('target', target)
         )
         .first()
 
-      if (cached) {
-        // Use cached artifact, skip GitHub workflow
-        const artifactUrl = getR2ArtifactUrl(buildHash)
-        await ctx.db.insert('builds', {
-          profileId: profile._id,
-          target: target,
-          githubRunId: 0,
-          status: 'success',
-          artifactUrl: artifactUrl,
-          startedAt: Date.now(),
-          completedAt: Date.now(),
-          buildHash: buildHash,
+      if (existingProfileBuild) {
+        // Update existing profileBuild to point to the (possibly new) build
+        await ctx.db.patch(existingProfileBuild._id, {
+          buildId: buildId,
         })
       } else {
-        // Not cached, proceed with normal build flow
-        const buildId = await ctx.db.insert('builds', {
-          profileId: profile._id,
+        // Create new profileBuild record
+        await ctx.db.insert('profileBuilds', {
+          profileId: args.profileId,
+          buildId: buildId,
           target: target,
-          githubRunId: 0,
-          status: 'queued',
-          startedAt: Date.now(),
-          buildHash: buildHash,
+          createdAt: Date.now(),
         })
+      }
 
-        // Schedule the action to dispatch GitHub workflow
+      // Only dispatch GitHub workflow if build was newly created and not cached
+      if (shouldDispatch) {
         await ctx.scheduler.runAfter(0, api.actions.dispatchGithubBuild, {
           buildId: buildId,
           target: target,
@@ -144,11 +204,25 @@ export const triggerBuild = mutation({
 export const listByProfile = query({
   args: { profileId: v.id('profiles') },
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query('builds')
+    // Query profileBuilds for this profile
+    const profileBuilds = await ctx.db
+      .query('profileBuilds')
       .withIndex('by_profile', (q) => q.eq('profileId', args.profileId))
-      .order('desc')
-      .take(10)
+      .collect()
+
+    // Get builds for each profileBuild
+    const builds = await Promise.all(
+      profileBuilds.map(async (pb) => {
+        const build = await ctx.db.get(pb.buildId)
+        return build
+      })
+    )
+
+    // Filter out nulls and sort by startedAt descending
+    return builds
+      .filter((b): b is NonNullable<typeof b> => b !== null)
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, 10)
   },
 })
 
@@ -161,10 +235,22 @@ export const get = query({
     const build = await ctx.db.get(args.buildId)
     if (!build) return null
 
-    const profile = await ctx.db.get(build.profileId)
-    if (!profile || profile.userId !== userId) return null
+    // Check if user has access via profileBuilds
+    // Get all profileBuilds for this build
+    const profileBuilds = await ctx.db
+      .query('profileBuilds')
+      .withIndex('by_build', (q) => q.eq('buildId', args.buildId))
+      .collect()
 
-    return build
+    // Check if any of these profileBuilds link to a profile owned by the user
+    for (const pb of profileBuilds) {
+      const profile = await ctx.db.get(pb.profileId)
+      if (profile && profile.userId === userId) {
+        return build
+      }
+    }
+
+    return null
   },
 })
 
@@ -177,73 +263,36 @@ export const getInternal = internalMutation({
 })
 
 export const deleteBuild = mutation({
-  args: { buildId: v.id('builds') },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx)
-    if (!userId) throw new Error('Unauthorized')
-
-    const build = await ctx.db.get(args.buildId)
-    if (!build) throw new Error('Build not found')
-
-    const profile = await ctx.db.get(build.profileId)
-    if (!profile || profile.userId !== userId) {
-      throw new Error('Unauthorized')
-    }
-
-    await ctx.db.delete(args.buildId)
+  args: {
+    buildId: v.id('builds'),
+    profileId: v.id('profiles'),
   },
-})
-
-export const retryBuild = mutation({
-  args: { buildId: v.id('builds') },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx)
     if (!userId) throw new Error('Unauthorized')
 
-    const build = await ctx.db.get(args.buildId)
-    if (!build) throw new Error('Build not found')
-
-    const profile = await ctx.db.get(build.profileId)
+    // Verify profile belongs to user
+    const profile = await ctx.db.get(args.profileId)
     if (!profile || profile.userId !== userId) {
       throw new Error('Unauthorized')
     }
 
-    // Reset build status
-    await ctx.db.patch(args.buildId, {
-      status: 'queued',
-      startedAt: Date.now(),
-      completedAt: undefined,
-    })
+    // Find profileBuild linking this profile to this build
+    const profileBuilds = await ctx.db
+      .query('profileBuilds')
+      .withIndex('by_build', (q) => q.eq('buildId', args.buildId))
+      .collect()
 
-    // Convert config object to flags string
-    const flags: string[] = []
-
-    // Handle Modules (Inverted Logic: Default Excluded)
-    for (const module of modulesData.modules) {
-      // If config[id] is NOT false (explicitly included), we exclude it.
-      if (profile.config[module.id] !== false) {
-        flags.push(`-D${module.id}=1`)
-      }
-    }
-
-    const flagsString = flags.join(' ')
-
-    // Compute build hash for retry using flags
-    const buildHash = await computeBuildHash(
-      profile.version,
-      build.target,
-      flagsString
+    const profileBuild = profileBuilds.find(
+      (pb) => pb.profileId === args.profileId
     )
 
-    console.log(`Computed retry hash: ${buildHash} (Flags: ${flagsString})`)
+    if (!profileBuild) {
+      throw new Error('ProfileBuild not found')
+    }
 
-    await ctx.scheduler.runAfter(0, api.actions.dispatchGithubBuild, {
-      buildId: args.buildId,
-      target: build.target,
-      flags: flagsString,
-      version: profile.version,
-      buildHash: buildHash,
-    })
+    // Delete only the profileBuild record (not the underlying build)
+    await ctx.db.delete(profileBuild._id)
   },
 })
 
@@ -289,34 +338,42 @@ export const updateBuildStatus = internalMutation({
 
     // If build succeeded, store in cache with R2 URL
     if (args.status === 'success' && build.buildHash && build.target) {
-      // Get version from profile
-      const profile = await ctx.db.get(build.profileId)
-      if (profile) {
-        // Construct R2 URL from hash
-        const artifactUrl = getR2ArtifactUrl(build.buildHash)
+      // Get version from any profileBuild linked to this build
+      const profileBuilds = await ctx.db
+        .query('profileBuilds')
+        .withIndex('by_build', (q) => q.eq('buildId', args.buildId))
+        .collect()
 
-        // Update build with R2 URL if not already set
-        if (!args.artifactUrl) {
-          await ctx.db.patch(args.buildId, { artifactUrl })
-        }
+      if (profileBuilds.length > 0) {
+        const profileBuild = profileBuilds[0]
+        const profile = await ctx.db.get(profileBuild.profileId)
+        if (profile) {
+          // Construct R2 URL from hash
+          const artifactUrl = getR2ArtifactUrl(build.buildHash)
 
-        // Check if cache entry already exists
-        const existing = await ctx.db
-          .query('buildCache')
-          .withIndex('by_hash_target', (q) =>
-            q.eq('buildHash', build.buildHash).eq('target', build.target)
-          )
-          .first()
+          // Update build with R2 URL if not already set
+          if (!args.artifactUrl) {
+            await ctx.db.patch(args.buildId, { artifactUrl })
+          }
 
-        if (!existing) {
-          // Store in cache
-          await ctx.db.insert('buildCache', {
-            buildHash: build.buildHash,
-            target: build.target,
-            artifactUrl: artifactUrl,
-            version: profile.version,
-            createdAt: Date.now(),
-          })
+          // Check if cache entry already exists
+          const existing = await ctx.db
+            .query('buildCache')
+            .withIndex('by_hash_target', (q) =>
+              q.eq('buildHash', build.buildHash).eq('target', build.target)
+            )
+            .first()
+
+          if (!existing) {
+            // Store in cache
+            await ctx.db.insert('buildCache', {
+              buildHash: build.buildHash,
+              target: build.target,
+              artifactUrl: artifactUrl,
+              version: profile.version,
+              createdAt: Date.now(),
+            })
+          }
         }
       }
     }

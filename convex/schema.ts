@@ -13,7 +13,6 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_user', ['userId']),
   builds: defineTable({
-    profileId: v.id('profiles'),
     target: v.string(),
     githubRunId: v.number(),
     status: v.string(), // Accepts arbitrary status strings (e.g., "queued", "checking_out", "building", "uploading", "success", "failure")
@@ -21,7 +20,17 @@ export default defineSchema({
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
     buildHash: v.string(),
-  }).index('by_profile', ['profileId']),
+  }).index('by_hash', ['buildHash']),
+
+  profileBuilds: defineTable({
+    profileId: v.id('profiles'),
+    buildId: v.id('builds'),
+    target: v.string(),
+    createdAt: v.number(),
+  })
+    .index('by_profile', ['profileId'])
+    .index('by_build', ['buildId'])
+    .index('by_profile_target', ['profileId', 'target']),
 
   buildCache: defineTable({
     buildHash: v.string(),

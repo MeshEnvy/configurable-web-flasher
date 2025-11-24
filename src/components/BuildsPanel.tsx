@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from 'convex/react'
-import { CheckCircle, Loader2, RotateCw, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle, Loader2, Trash2, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,6 @@ interface BuildsPanelProps {
 export default function BuildsPanel({ profileId }: BuildsPanelProps) {
   const builds = useQuery(api.builds.listByProfile, { profileId })
   const deleteBuild = useMutation(api.builds.deleteBuild)
-  const retryBuild = useMutation(api.builds.retryBuild)
 
   const getStatusIcon = (status: string) => {
     if (status === 'success') {
@@ -40,25 +39,12 @@ export default function BuildsPanel({ profileId }: BuildsPanelProps) {
 
   const handleDelete = async (buildId: Id<'builds'>) => {
     try {
-      await deleteBuild({ buildId })
+      await deleteBuild({ buildId, profileId })
       toast.success('Build deleted', {
         description: 'Build record has been removed.',
       })
     } catch (error) {
       toast.error('Delete failed', {
-        description: String(error),
-      })
-    }
-  }
-
-  const handleRetry = async (buildId: Id<'builds'>) => {
-    try {
-      await retryBuild({ buildId })
-      toast.success('Build retrying', {
-        description: 'Build has been queued again.',
-      })
-    } catch (error) {
-      toast.error('Retry failed', {
         description: String(error),
       })
     }
@@ -101,20 +87,6 @@ export default function BuildsPanel({ profileId }: BuildsPanelProps) {
             </Link>
 
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              {build.status === 'failure' && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 text-slate-400 hover:text-white"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    handleRetry(build._id)
-                  }}
-                  title="Retry Build"
-                >
-                  <RotateCw className="w-4 h-4" />
-                </Button>
-              )}
               <Button
                 size="icon"
                 variant="ghost"
