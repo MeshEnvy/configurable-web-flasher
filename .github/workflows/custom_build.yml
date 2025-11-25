@@ -39,9 +39,15 @@ jobs:
         run: |
           cat > /tmp/update_status.sh << 'EOF'
           update_status() {
+            local state=$1
+            local artifact_path=$2
+            local payload="{\"build_id\": \"$BUILD_ID\", \"state\": \"$state\", \"github_run_id\": \"$GITHUB_RUN_ID\"}"
+            if [ -n "$artifact_path" ]; then
+              payload="{\"build_id\": \"$BUILD_ID\", \"state\": \"$state\", \"artifactPath\": \"$artifact_path\", \"github_run_id\": \"$GITHUB_RUN_ID\"}"
+            fi
             curl -sSf -X POST "$CONVEX_URL/github-webhook" \
               -H "Content-Type: application/json" \
-              -d "{\"action\": \"status_update\", \"build_id\": \"$BUILD_ID\", \"status\": \"$1\"}" || true
+              -d "$payload" || true
           }
           EOF
           chmod +x /tmp/update_status.sh
@@ -188,21 +194,19 @@ jobs:
             --file "$BUILD_FILE" --remote
           
           # Update build with artifact path (with leading slash)
-          curl -sSf -X POST "$CONVEX_URL/github-webhook" \
-            -H "Content-Type: application/json" \
-            -d "{\"action\": \"status_update\", \"build_id\": \"$BUILD_ID\", \"status\": \"uploaded\", \"artifactPath\": \"$ARTIFACT_PATH\"}" || true
+          update_status uploaded "$ARTIFACT_PATH"
           
           echo "✅ Uploaded to R2: $ARTIFACT_PATH"
 
       - name: Update Build Status - Final
         if: always()
+        shell: bash
         run: |
+          source /tmp/update_status.sh
           STATUS="${{ job.status }}"
           if [ "$STATUS" = "success" ]; then
             STATUS_MSG="success"
           else
             STATUS_MSG="failure"
           fi
-          curl -X POST "${{ inputs.convex_url }}/github-webhook" \
-            -H "Content-Type: application/json" \
-            -d "{\"action\": \"completed\", \"build_id\": \"${{ inputs.build_id }}\", \"status\": \"$STATUS_MSG\"}"
+          update_status "$STATUS_MSG"

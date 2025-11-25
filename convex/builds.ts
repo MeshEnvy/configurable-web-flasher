@@ -299,12 +299,16 @@ export const updateBuildStatus = internalMutation({
     buildId: v.id('builds'),
     status: v.string(), // Accepts any status string value
     artifactPath: v.optional(v.string()),
+    githubRunId: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const build = await ctx.db.get(args.buildId)
     if (!build) return
 
-    const updateData: BuildUpdateData & { artifactPath?: string } = {
+    const updateData: BuildUpdateData & {
+      artifactPath?: string
+      githubRunId?: number
+    } = {
       status: args.status,
     }
 
@@ -316,6 +320,11 @@ export const updateBuildStatus = internalMutation({
     // Set artifactPath if provided
     if (args.artifactPath !== undefined) {
       updateData.artifactPath = args.artifactPath
+    }
+
+    // Set githubRunId if provided
+    if (args.githubRunId !== undefined) {
+      updateData.githubRunId = args.githubRunId
     }
 
     await ctx.db.patch(args.buildId, updateData)

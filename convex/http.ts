@@ -15,9 +15,9 @@ http.route({
 
     // Verify signature (TODO: Add HMAC verification)
 
-    // Validate build_id is present
-    if (!payload.build_id || !payload.status) {
-      return new Response('Missing build_id or status', { status: 400 })
+    // Validate build_id and state are present
+    if (!payload.build_id || !payload.state) {
+      return new Response('Missing build_id or state', { status: 400 })
     }
 
     // Verify build exists
@@ -29,16 +29,16 @@ http.route({
       return new Response('Build not found', { status: 404 })
     }
 
-    // Handle status updates (intermediate statuses) and completion (final statuses)
-    if (payload.action === 'status_update' || payload.action === 'completed') {
-      await ctx.runMutation(internal.builds.updateBuildStatus, {
-        buildId: payload.build_id,
-        status: payload.status,
-        artifactPath: payload.artifactPath,
-      })
+    const githubRunId = payload.github_run_id
+      ? Number(payload.github_run_id)
+      : undefined
 
-      return new Response(null, { status: 200 })
-    }
+    await ctx.runMutation(internal.builds.updateBuildStatus, {
+      buildId: payload.build_id,
+      status: payload.state,
+      artifactPath: payload.artifactPath,
+      githubRunId,
+    })
 
     return new Response(null, { status: 200 })
   }),
