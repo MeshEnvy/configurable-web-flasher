@@ -122,6 +122,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install platformio
 
+      - name: Install Brotli
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y brotli
+
       - name: Update Status - Building Firmware
         shell: bash
         run: |
@@ -199,6 +204,110 @@ jobs:
           update_status uploaded "$ARTIFACT_PATH"
           
           echo "✅ Uploaded to R2: $ARTIFACT_PATH"
+
+      - name: Update Status - Creating Source Archive
+        if: success()
+        shell: bash
+        run: |
+          source /tmp/update_status.sh
+          update_status creating_source_archive
+
+      - name: Create Source Archive
+        if: success()
+        shell: bash
+        run: |
+          cd firmware
+          
+          # Create MESHFORGE.md with build metadata
+          cat > MESHFORGE.md << EOF
+          # Meshtastic Firmware Build Metadata
+
+          This archive contains the complete source code and dependencies used to build this firmware.
+
+          ## Build Configuration
+
+          - **Target Board**: ${{ inputs.target }}
+          - **Firmware Version**: ${{ inputs.version }}
+          - **Build Hash**: ${{ inputs.build_hash }}
+          - **Build Timestamp**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          ## Build Flags / Compiler Switches
+
+          \`\`\`
+          ${{ inputs.flags || '(none)' }}
+          \`\`\`
+
+          ## How to Build
+
+          1. Extract this archive:
+             \`\`\`bash
+             tar --use-compress-program='brotli -d' -xf source.tar.br
+             \`\`\`
+
+          2. Navigate to the firmware directory:
+             \`\`\`bash
+             cd firmware
+             \`\`\`
+
+          3. Install PlatformIO (if not already installed):
+             \`\`\`bash
+             pip install platformio
+             \`\`\`
+
+          4. Build with the exact same configuration:
+             \`\`\`bash
+             export PLATFORMIO_BUILD_FLAGS="${{ inputs.flags }}"
+             pio run -e ${{ inputs.target }}
+             \`\`\`
+
+          ## Notes
+
+          - Library dependencies (`.pio/libdeps/`) are included for offline builds
+          - Toolchains/compilers are not included - PlatformIO will download these as needed
+          - The build flags above must be set exactly as shown to reproduce the build
+          EOF
+          
+          # Create tar archive and compress with Brotli
+          # Include MESHFORGE.md, source code, submodules, and .pio/libdeps if it exists
+          cd ..
+          tar --use-compress-program='brotli -q 11' -cf "${{ inputs.build_hash }}.tar.br" \
+            --exclude='.pio/build' \
+            --exclude='.pio/packages' \
+            --exclude='.git' \
+            -C firmware . \
+            || (echo "Note: tar --use-compress-program failed, using separate compression" && \
+                tar --exclude='.pio/build' \
+                    --exclude='.pio/packages' \
+                    --exclude='.git' \
+                    -cf - -C firmware . | \
+                brotli -q 11 -o "${{ inputs.build_hash }}.tar.br")
+          
+          echo "✅ Created source archive: ${{ inputs.build_hash }}.tar.br"
+          ls -lh "${{ inputs.build_hash }}.tar.br"
+
+      - name: Update Status - Uploading Source Archive
+        if: success()
+        shell: bash
+        run: |
+          source /tmp/update_status.sh
+          update_status uploading_source_archive
+
+      - name: Upload Source Archive to R2
+        if: success()
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        shell: bash
+        run: |
+          SOURCE_ARCHIVE_PATH="/${{ inputs.build_hash }}.tar.br"
+          SOURCE_OBJECT_PATH="${R2_BUCKET_NAME}/${{ inputs.build_hash }}.tar.br"
+          
+          # Upload source archive to R2
+          wrangler r2 object put "$SOURCE_OBJECT_PATH" \
+            --file "${{ inputs.build_hash }}.tar.br" --remote
+          
+          echo "✅ Uploaded source archive to R2: $SOURCE_ARCHIVE_PATH"
 
       - name: Update Build Status - Final
         if: always()
