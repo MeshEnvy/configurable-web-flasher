@@ -18,7 +18,13 @@ export default function BuildProgress() {
   const generateDownloadUrl = useMutation(
     api.builds.generateAnonymousDownloadUrl
   )
+  const generateSourceDownloadUrl = useMutation(
+    api.builds.generateAnonymousSourceDownloadUrl
+  )
   const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [sourceDownloadError, setSourceDownloadError] = useState<string | null>(
+    null
+  )
 
   if (!buildHash) {
     return (
@@ -84,6 +90,21 @@ export default function BuildProgress() {
       const message = error instanceof Error ? error.message : String(error)
       setDownloadError('Failed to generate download link.')
       console.error('Download error', message)
+    }
+  }
+
+  const handleSourceDownload = async () => {
+    setSourceDownloadError(null)
+    try {
+      const url = await generateSourceDownloadUrl({
+        build: pick(build, Object.keys(buildFields) as (keyof BuildFields)[]),
+        slug: `quick-build`,
+      })
+      window.location.href = url
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setSourceDownloadError('Failed to generate source download link.')
+      console.error('Source download error', message)
     }
   }
 
@@ -175,6 +196,16 @@ export default function BuildProgress() {
               </Button>
               {downloadError && (
                 <p className="text-sm text-red-400">{downloadError}</p>
+              )}
+              <Button
+                onClick={handleSourceDownload}
+                className="w-full bg-slate-700 hover:bg-slate-600"
+                variant="outline"
+              >
+                Download source
+              </Button>
+              {sourceDownloadError && (
+                <p className="text-sm text-red-400">{sourceDownloadError}</p>
               )}
             </div>
           )}

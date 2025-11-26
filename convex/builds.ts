@@ -1,8 +1,9 @@
 import { getAuthUserId } from '@convex-dev/auth/server'
+import type { GenericMutationCtx } from 'convex/server'
 import { v } from 'convex/values'
 import { pick } from 'convex-helpers'
 import { api, internal } from './_generated/api'
-import type { Id } from './_generated/dataModel'
+import type { DataModel, Id } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import { generateSignedDownloadUrl } from './lib/r2'
 import { type BuildConfigFields, type BuildFields, buildFields } from './schema'
@@ -263,39 +264,84 @@ export const updateBuildStatus = internalMutation({
   },
 })
 
+/**
+ * Helper to generate authenticated download URL
+ */
+async function generateAuthenticatedDownloadUrl(
+  ctx: GenericMutationCtx<DataModel>,
+  buildId: Id<'builds'>,
+  profileId: Id<'profiles'>,
+  objectKey: string,
+  ext: string,
+  filenameSuffix: string = '',
+  contentType: string = 'application/octet-stream',
+  incrementFlashCount: boolean = true
+): Promise<string> {
+  const userId = await getAuthUserId(ctx)
+  if (!userId) throw new Error('Unauthorized')
+
+  // Verify profile belongs to user or is public
+  const profile = await ctx.db.get(profileId)
+  if (!profile) throw new Error('Profile not found')
+
+  // If profile is private, ensure user owns it
+  if (profile.isPublic === false && profile.userId !== userId) {
+    throw new Error('Unauthorized')
+  }
+
+  const build = await ctx.db.get(buildId)
+  if (!build) throw new Error('Build not found')
+
+  // Increment flash count for firmware downloads
+  if (incrementFlashCount) {
+    const nextCount = (profile.flashCount ?? 0) + 1
+    await ctx.db.patch(profileId, {
+      flashCount: nextCount,
+      updatedAt: Date.now(),
+    })
+  }
+
+  // Slugify profile name for filename
+  const slug = profile.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)+/g, '')
+
+  const filename = `${slug}-${build.config.target}${filenameSuffix}.${ext}`
+
+  return await generateSignedDownloadUrl(objectKey, filename, contentType)
+}
+
+/**
+ * Helper to generate anonymous download URL
+ */
+function generateAnonymousDownloadUrlHelper(
+  build: BuildFields,
+  slug: string,
+  objectKey: string,
+  ext: string,
+  filenameSuffix: string = '',
+  contentType: string = 'application/octet-stream'
+): Promise<string> {
+  const {
+    buildHash,
+    config: { target, version },
+  } = build
+
+  const pfx = slug ? `${slug}-` : ''
+  const filename = `${pfx}${target}-${version}-${buildHash.substring(0, 4)}${filenameSuffix}.${ext}`
+
+  return generateSignedDownloadUrl(objectKey, filename, contentType)
+}
+
 export const generateDownloadUrl = mutation({
   args: {
     buildId: v.id('builds'),
     profileId: v.id('profiles'),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx)
-    if (!userId) throw new Error('Unauthorized')
-
-    // Verify profile belongs to user or is public
-    const profile = await ctx.db.get(args.profileId)
-    if (!profile) throw new Error('Profile not found')
-
-    // If profile is private, ensure user owns it
-    if (profile.isPublic === false && profile.userId !== userId) {
-      throw new Error('Unauthorized')
-    }
-
     const build = await ctx.db.get(args.buildId)
     if (!build) throw new Error('Build not found')
-
-    // Increment flash count
-    const nextCount = (profile.flashCount ?? 0) + 1
-    await ctx.db.patch(args.profileId, {
-      flashCount: nextCount,
-      updatedAt: Date.now(),
-    })
-
-    // Slugify profile name for filename
-    const slug = profile.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)+/g, '')
 
     // User indicated that artifactPath must be present for a valid download
     if (!build.artifactPath) {
@@ -303,7 +349,6 @@ export const generateDownloadUrl = mutation({
     }
 
     let objectKey = build.artifactPath
-
     // Remove leading slash if present
     if (objectKey.startsWith('/')) {
       objectKey = objectKey.substring(1)
@@ -317,12 +362,12 @@ export const generateDownloadUrl = mutation({
       throw new Error('Could not determine file extension from artifact path')
     }
 
-    const filename = `${slug}-${build.config.target}.${ext}`
-
-    return await generateSignedDownloadUrl(
+    return await generateAuthenticatedDownloadUrl(
+      ctx,
+      args.buildId,
+      args.profileId,
       objectKey,
-      filename,
-      'application/octet-stream'
+      ext
     )
   },
 })
@@ -344,18 +389,54 @@ export const generateAnonymousDownloadUrl = mutation({
       throw new Error('Could not determine file extension from artifact path')
     }
 
-    const {
-      buildHash,
-      config: { target, version },
-    } = args.build
-
-    const pfx = args.slug ? `${args.slug}-` : ''
-    const filename = `${pfx}${target}-${version}-${buildHash.substring(0, 4)}.${ext}`
-
-    return await generateSignedDownloadUrl(
+    return await generateAnonymousDownloadUrlHelper(
+      args.build,
+      args.slug,
       objectKey,
-      filename,
-      'application/octet-stream'
+      ext
+    )
+  },
+})
+
+export const generateSourceDownloadUrl = mutation({
+  args: {
+    buildId: v.id('builds'),
+    profileId: v.id('profiles'),
+  },
+  handler: async (ctx, args) => {
+    const build = await ctx.db.get(args.buildId)
+    if (!build) throw new Error('Build not found')
+
+    const objectKey = `${build.buildHash}.tar.gz`
+
+    return await generateAuthenticatedDownloadUrl(
+      ctx,
+      args.buildId,
+      args.profileId,
+      objectKey,
+      'tar.gz',
+      '-source',
+      'application/gzip',
+      false // Don't increment flash count for source downloads
+    )
+  },
+})
+
+export const generateAnonymousSourceDownloadUrl = mutation({
+  args: {
+    build: v.object(buildFields),
+    slug: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    const objectKey = `${args.build.buildHash}.tar.gz`
+
+    return await generateAnonymousDownloadUrlHelper(
+      args.build,
+      args.slug,
+      objectKey,
+      'tar.gz',
+      '-source',
+      'application/gzip'
     )
   },
 })

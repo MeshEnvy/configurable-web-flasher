@@ -30,6 +30,9 @@ export default function ProfileFlash() {
     id ? { id: id as Id<'profiles'> } : 'skip'
   )
   const generateDownloadUrl = useMutation(api.builds.generateDownloadUrl)
+  const generateSourceDownloadUrl = useMutation(
+    api.builds.generateSourceDownloadUrl
+  )
 
   useEffect(() => {
     if (id && target && profile) {
@@ -101,6 +104,20 @@ export default function ProfileFlash() {
       window.location.href = url
     } catch (error) {
       console.error('Failed to generate download URL', error)
+    }
+  }
+
+  const handleSourceDownload = async () => {
+    if (!id) return
+
+    try {
+      const url = await generateSourceDownloadUrl({
+        buildId: build._id,
+        profileId: id as Id<'profiles'>,
+      })
+      window.location.href = url
+    } catch (error) {
+      console.error('Failed to generate source download URL', error)
     }
   }
 
@@ -216,12 +233,19 @@ export default function ProfileFlash() {
           </div>
 
           {build.status === 'success' && build.artifactPath && (
-            <div>
+            <div className="space-y-2">
               <Button
                 onClick={handleDownload}
                 className="bg-cyan-600 hover:bg-cyan-700 w-full"
               >
                 Download Firmware
+              </Button>
+              <Button
+                onClick={handleSourceDownload}
+                className="bg-slate-700 hover:bg-slate-600 w-full"
+                variant="outline"
+              >
+                Download Source
               </Button>
             </div>
           )}
