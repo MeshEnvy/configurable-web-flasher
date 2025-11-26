@@ -45,7 +45,7 @@ export function ProfileCardContent({ profile }: ProfileCardContentProps) {
         </p>
       </div>
       <ProfileStatisticPills
-        version={profile.version}
+        version={profile.config.version}
         flashCount={flashCount}
       />
     </>

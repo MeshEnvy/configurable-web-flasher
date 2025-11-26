@@ -5,17 +5,19 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { api } from '../../convex/_generated/api'
 import modulesData from '../../convex/modules.json'
-import type { ProfileFields, ProfilesDoc } from '../../convex/schema'
+import type {
+  BuildConfigFields,
+  ProfileFields,
+  ProfilesDoc,
+} from '../../convex/schema'
 import { VERSIONS } from '../constants/versions'
 import { ModuleToggle } from './ModuleToggle'
 
 // Form values use flattened config for UI, but will be transformed to nested on submit
 type ProfileFormValues = Omit<
   ProfileFields,
-  '_id' | '_creationTime' | 'userId' | 'flashCount' | 'updatedAt' | 'config'
-> & {
-  config: Record<string, boolean | undefined> // Flattened: moduleId -> boolean
-}
+  '_id' | '_creationTime' | 'userId' | 'flashCount' | 'updatedAt'
+>
 
 interface ProfileEditorProps {
   initialData?: ProfilesDoc
@@ -30,27 +32,6 @@ export default function ProfileEditor({
 }: ProfileEditorProps) {
   const upsertProfile = useMutation(api.profiles.upsert)
 
-  // Flatten config for UI: transform config.modulesExcluded to flat object
-  const getFlattenedConfig = (
-    config: ProfileFields['config'] | undefined
-  ): Record<string, boolean> => {
-    if (!config || !config.modulesExcluded) return {}
-    return { ...config.modulesExcluded }
-  }
-
-  // Transform flat config back to nested structure for database
-  const getNestedConfig = (
-    flatConfig: Record<string, boolean | undefined>
-  ): ProfileFields['config'] => {
-    const modulesExcluded: Record<string, boolean> = {}
-    for (const [key, value] of Object.entries(flatConfig)) {
-      if (value === true) {
-        modulesExcluded[key] = true
-      }
-    }
-    return { modulesExcluded }
-  }
-
   const {
     register,
     handleSubmit,
@@ -61,21 +42,22 @@ export default function ProfileEditor({
     defaultValues: {
       name: initialData?.name || '',
       description: initialData?.description || '',
-      config: getFlattenedConfig(initialData?.config),
-      version: initialData?.version || VERSIONS[0],
+      config: {
+        version: VERSIONS[0],
+        modulesExcluded: {},
+        target: '',
+        ...initialData?.config,
+      },
       isPublic: initialData?.isPublic ?? true,
     },
   })
 
   const onSubmit = async (data: ProfileFormValues) => {
-    // Transform flattened config back to nested structure
-    const nestedConfig = getNestedConfig(data.config)
     await upsertProfile({
       id: initialData?._id,
       name: data.name,
       description: data.description,
-      config: nestedConfig,
-      version: data.version,
+      config: data.config,
       isPublic: data.isPublic,
     })
     onSave()
@@ -107,7 +89,7 @@ export default function ProfileEditor({
           </label>
           <select
             id="version"
-            {...register('version')}
+            {...register('config.version')}
             className="w-full h-10 px-3 rounded-md border border-slate-800 bg-slate-950 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-950"
           >
             {VERSIONS.map((v) => (
@@ -171,11 +153,8 @@ export default function ProfileEditor({
             {modulesData.modules.map((module) => {
               // Flattened config: config[id] === true -> Explicitly Excluded
               // config[id] === undefined/false -> Default (included if target supports)
-              const currentConfig = watch('config') as Record<
-                string,
-                boolean | undefined
-              >
-              const configValue = currentConfig[module.id]
+              const currentConfig = watch('config') as BuildConfigFields
+              const configValue = currentConfig.modulesExcluded[module.id]
               const isExcluded = configValue === true
 
               return (
@@ -188,9 +167,9 @@ export default function ProfileEditor({
                   onToggle={(excluded) => {
                     const newConfig = { ...currentConfig }
                     if (excluded) {
-                      newConfig[module.id] = true
+                      newConfig.modulesExcluded[module.id] = true
                     } else {
-                      delete newConfig[module.id]
+                      delete newConfig.modulesExcluded[module.id]
                     }
                     setValue('config', newConfig)
                   }}
