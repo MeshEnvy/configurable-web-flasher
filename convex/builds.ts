@@ -5,7 +5,7 @@ import { api, internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import { generateSignedDownloadUrl } from './lib/r2'
-import { type BuildFields, buildFields, type ProfileFields } from './schema'
+import { type BuildConfigFields, type BuildFields, buildFields } from './schema'
 
 type BuildUpdateData = {
   status: string
@@ -19,13 +19,22 @@ export const get = query({
   },
 })
 
+export const getByHash = query({
+  args: { buildHash: v.string() },
+  handler: async (ctx, args) => {
+    const build = await ctx.db
+      .query('builds')
+      .filter((q) => q.eq(q.field('buildHash'), args.buildHash))
+      .unique()
+    return build ?? null
+  },
+})
+
 /**
- * Computes flags string from profile config.
+ * Computes flags string from build config.
  * Only excludes modules explicitly marked as excluded (config[id] === true).
  */
-export function computeFlagsFromProfile(
-  config: ProfileFields['config']
-): string {
+export function computeFlagsFromConfig(config: BuildConfigFields): string {
   // Sort modules to ensure consistent order
   return Object.keys(config.modulesExcluded)
     .sort()
@@ -36,9 +45,9 @@ export function computeFlagsFromProfile(
 
 /**
  * Computes a stable SHA-256 hash from version, target, and flags.
- * This hash uniquely identifies a build configuration based on what is actually executed.
+ * Internal helper for hash computation.
  */
-export async function computeBuildHash(
+async function computeBuildHashInternal(
   version: string,
   target: string,
   flags: string
@@ -61,15 +70,18 @@ export async function computeBuildHash(
 }
 
 /**
- * Computes buildHash for a profile and target.
+ * Computes buildHash from build config.
  * This is the single source of truth for build hash computation.
  */
-export async function computeBuildHashForProfile(
-  profile: ProfileFields,
-  target: string
+export async function computeBuildHash(
+  config: BuildConfigFields
 ): Promise<{ hash: string; flags: string }> {
-  const flags = computeFlagsFromProfile(profile.config)
-  const hash = await computeBuildHash(profile.version, target, flags)
+  const flags = computeFlagsFromConfig(config)
+  const hash = await computeBuildHashInternal(
+    config.version,
+    config.target,
+    flags
+  )
   return { hash, flags }
 }
 
@@ -95,7 +107,7 @@ export function getR2ArtifactUrl(
 // This is the single source of truth for build creation
 export const upsertBuild = internalMutation({
   args: {
-    ...pick(buildFields, ['buildHash', 'target', 'version', 'profileString']),
+    ...pick(buildFields, ['buildHash', 'config']),
     status: v.optional(v.string()),
     flags: v.string(),
   },
@@ -107,7 +119,7 @@ export const upsertBuild = internalMutation({
       .filter((q) => q.eq(q.field('buildHash'), args.buildHash))
       .unique()
 
-    const { status, buildHash, target, version, profileString, flags } = args
+    const { status, buildHash, config, flags } = args
 
     if (existingBuild) {
       await ctx.db.patch(existingBuild._id, {
@@ -119,21 +131,19 @@ export const upsertBuild = internalMutation({
 
     // Create new build
     const buildId = await ctx.db.insert('builds', {
-      target,
       status: 'queued',
       startedAt: Date.now(),
       buildHash,
       updatedAt: Date.now(),
-      version,
-      profileString,
+      config,
     })
 
     // Dispatch GitHub workflow if needed
     await ctx.scheduler.runAfter(0, api.actions.dispatchGithubBuild, {
+      target: config.target,
+      version: config.version,
       buildId,
-      target,
       flags,
-      version,
       buildHash,
     })
 
@@ -141,39 +151,52 @@ export const upsertBuild = internalMutation({
   },
 })
 
-export const ensureBuildForProfileTarget = mutation({
+export const ensureBuildFromConfig = mutation({
   args: {
-    profileId: v.id('profiles'),
     target: v.string(),
+    version: v.string(),
+    modulesExcluded: v.optional(v.record(v.string(), v.boolean())),
+    profileName: v.optional(v.string()),
+    profileDescription: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<Id<'builds'>> => {
-    const userId = await getAuthUserId(ctx)
-    if (!userId) {
-      throw new Error('Unauthorized')
-    }
-
-    const profile = await ctx.db.get(args.profileId)
-    if (!profile) {
-      throw new Error('Profile not found')
+  handler: async (ctx, args) => {
+    // Construct config for the build
+    const config: BuildConfigFields = {
+      version: args.version,
+      modulesExcluded: args.modulesExcluded ?? {},
+      target: args.target,
     }
 
     // Compute build hash (single source of truth)
-    const { hash: buildHash, flags: flagsString } =
-      await computeBuildHashForProfile(profile, args.target)
+    const { hash: buildHash, flags } = await computeBuildHash(config)
 
-    // Upsert the build (single source of truth)
+    const existingBuild = await ctx.db
+      .query('builds')
+      .filter((q) => q.eq(q.field('buildHash'), buildHash))
+      .unique()
+
+    if (existingBuild) {
+      return {
+        buildId: existingBuild._id,
+        existed: true,
+        buildHash,
+      }
+    }
+
     const buildId: Id<'builds'> = await ctx.runMutation(
       internal.builds.upsertBuild,
       {
         buildHash,
-        target: args.target,
-        flags: flagsString,
-        version: profile.version,
-        profileString: JSON.stringify(profile),
+        flags,
+        config,
       }
     )
 
-    return buildId
+    return {
+      buildId,
+      existed: false,
+      buildHash,
+    }
   },
 })
 
@@ -294,7 +317,40 @@ export const generateDownloadUrl = mutation({
       throw new Error('Could not determine file extension from artifact path')
     }
 
-    const filename = `${slug}-${build.target}.${ext}`
+    const filename = `${slug}-${build.config.target}.${ext}`
+
+    return await generateSignedDownloadUrl(
+      objectKey,
+      filename,
+      'application/octet-stream'
+    )
+  },
+})
+
+export const generateAnonymousDownloadUrl = mutation({
+  args: {
+    build: v.object(buildFields),
+    slug: v.string(),
+  },
+  handler: async (ctx, args) => {
+    let objectKey = args.build.artifactPath || ''
+    if (objectKey.startsWith('/')) {
+      objectKey = objectKey.substring(1)
+    }
+
+    const parts = objectKey.split('.')
+    const ext = parts.length > 1 ? parts.pop() : undefined
+    if (!ext) {
+      throw new Error('Could not determine file extension from artifact path')
+    }
+
+    const {
+      buildHash,
+      config: { target, version },
+    } = args.build
+
+    const pfx = args.slug ? `${args.slug}-` : ''
+    const filename = `${pfx}${target}-${version}-${buildHash.substring(0, 4)}.${ext}`
 
     return await generateSignedDownloadUrl(
       objectKey,

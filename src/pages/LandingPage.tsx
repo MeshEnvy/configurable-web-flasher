@@ -8,6 +8,23 @@ import {
 import { Button } from '@/components/ui/button'
 import { api } from '../../convex/_generated/api'
 
+function QuickBuildIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      role="img"
+      aria-label="Quick build"
+      {...props}
+    >
+      <title>Quick build</title>
+      <path fill="currentColor" d="M11 15H6l7-14v8h5l-7 14z" />
+    </svg>
+  )
+}
+
 export default function LandingPage() {
   const navigate = useNavigate()
   const { signIn } = useAuthActions()
@@ -16,7 +33,6 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="max-w-7xl mx-auto">
-        {/* Hero Section */}
         <div className="text-center py-20 px-8">
           <h1 className="text-6xl md:text-7xl font-bold mb-6 leading-[1.1]">
             <span className="bg-gradient-to-r from-cyan-400 to-blue-600 bg-clip-text text-transparent inline-block pb-2">
@@ -27,7 +43,7 @@ export default function LandingPage() {
             Create custom profiles, build firmware in the cloud, and flash
             directly from your browser.
           </p>
-          <div className="flex justify-center">
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <Authenticated>
               <Button
                 onClick={() => navigate('/dashboard')}
@@ -48,6 +64,15 @@ export default function LandingPage() {
                 Sign in
               </Button>
             </Unauthenticated>
+            <Button
+              onClick={() => navigate('/builds/new')}
+              size="lg"
+              variant="outline"
+              className="border-cyan-500/50 text-white hover:bg-slate-900/60"
+            >
+              <QuickBuildIcon className="mr-2 h-5 w-5" />
+              Quick Build
+            </Button>
           </div>
         </div>
 
@@ -67,9 +92,9 @@ export default function LandingPage() {
                   key={profile._id}
                   type="button"
                   onClick={() => navigate(`/profiles/${profile._id}`)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
                       navigate(`/profiles/${profile._id}`)
                     }
                   }}

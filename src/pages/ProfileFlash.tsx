@@ -16,9 +16,7 @@ export default function ProfileFlash() {
     target: string
   }>()
 
-  const ensureBuildForProfileTarget = useMutation(
-    api.builds.ensureBuildForProfileTarget
-  )
+  const ensureBuildFromConfig = useMutation(api.builds.ensureBuildFromConfig)
 
   const [buildId, setBuildId] = useState<Id<'builds'> | null>(null)
 
@@ -34,12 +32,12 @@ export default function ProfileFlash() {
   const generateDownloadUrl = useMutation(api.builds.generateDownloadUrl)
 
   useEffect(() => {
-    if (id && target) {
-      ensureBuildForProfileTarget({ profileId: id as Id<'profiles'>, target })
-        .then(setBuildId)
+    if (id && target && profile) {
+      ensureBuildFromConfig(profile.config)
+        .then((result) => setBuildId(result.buildId))
         .catch(() => setBuildId(null))
     }
-  }, [id, target, ensureBuildForProfileTarget])
+  }, [id, target, profile, ensureBuildFromConfig])
 
   if (build === undefined || profile === undefined) {
     return (
@@ -144,14 +142,15 @@ export default function ProfileFlash() {
             </p>
             <h1 className="text-3xl font-bold mt-1">{profile.name}</h1>
             <p className="text-slate-400 text-sm mt-2">
-              Version: <span className="text-slate-200">{profile.version}</span>
+              Version:{' '}
+              <span className="text-slate-200">{profile.config.version}</span>
             </p>
           </div>
           <p className="text-slate-200 leading-relaxed">
             {profile.description}
           </p>
           <ProfileStatisticPills
-            version={profile.version}
+            version={profile.config.version}
             flashCount={totalFlashes}
           />
         </div>

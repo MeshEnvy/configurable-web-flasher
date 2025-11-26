@@ -3,14 +3,17 @@ import { defineSchema, defineTable } from 'convex/server'
 import { type Infer, v } from 'convex/values'
 import type { Doc } from './_generated/dataModel'
 
+export const buildConfigFields = {
+  version: v.string(),
+  modulesExcluded: v.record(v.string(), v.boolean()),
+  target: v.string(),
+}
+
 export const profileFields = {
   userId: v.id('users'),
   name: v.string(),
   description: v.string(),
-  version: v.string(),
-  config: v.object({
-    modulesExcluded: v.record(v.string(), v.boolean()),
-  }),
+  config: v.object(buildConfigFields),
   isPublic: v.boolean(),
   flashCount: v.number(),
   updatedAt: v.number(),
@@ -18,12 +21,10 @@ export const profileFields = {
 
 export const buildFields = {
   buildHash: v.string(),
-  target: v.string(),
-  version: v.string(),
   status: v.string(),
   startedAt: v.number(),
   updatedAt: v.number(),
-  profileString: v.string(),
+  config: v.object(buildConfigFields),
 
   // Optional props
   completedAt: v.optional(v.number()),
@@ -39,7 +40,12 @@ export const schema = defineSchema({
 
 export type ProfilesDoc = Doc<'profiles'>
 export type BuildsDoc = Doc<'builds'>
-export type ProfileFields = Infer<typeof schema.tables.profiles.validator>
-export type BuildFields = Infer<typeof schema.tables.builds.validator>
+export const buildsDocValidator = schema.tables.builds.validator
+export const profilesDocValidator = schema.tables.profiles.validator
+export type ProfileFields = Infer<typeof profilesDocValidator>
+export type BuildFields = Infer<typeof buildsDocValidator>
+
+const buildConfigFieldsValidator = v.object(buildConfigFields)
+export type BuildConfigFields = Infer<typeof buildConfigFieldsValidator>
 
 export default schema

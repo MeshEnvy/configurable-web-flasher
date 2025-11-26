@@ -16,9 +16,7 @@ export default function ProfileDetail() {
   const navigate = useNavigate()
   const { isAuthenticated } = useConvexAuth()
   const { signIn } = useAuthActions()
-  const ensureBuildForProfileTarget = useMutation(
-    api.builds.ensureBuildForProfileTarget
-  )
+  const ensureBuildFromConfig = useMutation(api.builds.ensureBuildFromConfig)
   const profile = useQuery(
     api.profiles.get,
     id ? { id: id as Id<'profiles'> } : 'skip'
@@ -107,10 +105,8 @@ export default function ProfileDetail() {
     }
 
     try {
-      await ensureBuildForProfileTarget({
-        profileId: id as Id<'profiles'>,
-        target: selectedTarget,
-      })
+      if (!profile) return
+      await ensureBuildFromConfig(profile.config)
       navigate(`/profiles/${id}/flash/${selectedTarget}`)
     } catch (error) {
       toast.error('Failed to start flash', {
@@ -132,7 +128,7 @@ export default function ProfileDetail() {
             </p>
           </div>
           <ProfileStatisticPills
-            version={profile.version}
+            version={profile.config.version}
             flashCount={totalFlashes}
           />
         </div>

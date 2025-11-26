@@ -1,6 +1,7 @@
 import { getAuthUserId } from '@convex-dev/auth/server'
 import { v } from 'convex/values'
 import { internalMutation, mutation, query } from './_generated/server'
+import { buildConfigFields } from './schema'
 
 export const list = query({
   args: {},
@@ -77,7 +78,7 @@ export const upsert = mutation({
     id: v.optional(v.id('profiles')),
     name: v.string(),
     description: v.string(),
-    config: v.any(),
+    config: v.object(buildConfigFields),
     version: v.string(),
     isPublic: v.boolean(),
   },
@@ -96,7 +97,6 @@ export const upsert = mutation({
         name: args.name,
         description: args.description,
         config: args.config,
-        version: args.version,
         isPublic: args.isPublic,
         flashCount: profile.flashCount ?? 0,
         updatedAt: Date.now(),
@@ -110,7 +110,6 @@ export const upsert = mutation({
         name: args.name,
         description: args.description,
         config: args.config,
-        version: args.version,
         flashCount: 0,
         updatedAt: Date.now(),
         isPublic: args.isPublic ?? true,
