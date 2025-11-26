@@ -36,14 +36,15 @@ export default function LandingPage() {
         <div className="text-center py-20 px-8">
           <h1 className="text-6xl md:text-7xl font-bold mb-6 leading-[1.1]">
             <span className="bg-gradient-to-r from-cyan-400 to-blue-600 bg-clip-text text-transparent inline-block pb-2">
-              Manage your Meshtastic fleet
+              Build firmware right from your bench
             </span>
           </h1>
-          <p className="text-xl md:text-2xl text-slate-400 max-w-2xl mx-auto mb-8">
-            Create custom profiles, build firmware in the cloud, and flash
-            directly from your browser.
+          <p className="text-xl md:text-2xl text-slate-400 max-w-2xl mx-auto mb-10">
+            Craft custom Meshtastic firmware in the cloud, flash from your
+            browser, and share your builds with the community.
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-3">
+
+          <div className="flex flex-wrap items-center justify-center gap-3 mb-10">
             <Button
               onClick={() => navigate('/builds/new')}
               size="lg"
@@ -87,6 +88,51 @@ export default function LandingPage() {
                 Sign in
               </Button>
             </Unauthenticated>
+          </div>
+
+          {/* Benefits Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto mb-10">
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 text-left">
+              <h3 className="text-lg font-semibold text-cyan-400 mb-2">
+                Zero Install
+              </h3>
+              <p className="text-slate-300 text-sm">
+                No downloads, no toolchains. Everything runs in your browser.
+              </p>
+            </div>
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 text-left">
+              <h3 className="text-lg font-semibold text-cyan-400 mb-2">
+                Custom Firmware
+              </h3>
+              <p className="text-slate-300 text-sm">
+                Build bespoke Meshtastic firmware tailored to your exact needs.
+              </p>
+            </div>
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 text-left">
+              <h3 className="text-lg font-semibold text-cyan-400 mb-2">
+                Community Extensions
+              </h3>
+              <p className="text-slate-300 text-sm">
+                Include community modules and extensions beyond core Meshtastic.
+              </p>
+            </div>
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 text-left md:col-span-2 lg:col-span-1">
+              <h3 className="text-lg font-semibold text-cyan-400 mb-2">
+                Share & Remix
+              </h3>
+              <p className="text-slate-300 text-sm">
+                Publish your build profiles and let others remix your configs.
+              </p>
+            </div>
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 text-left md:col-span-2 lg:col-span-2">
+              <h3 className="text-lg font-semibold text-cyan-400 mb-2">
+                Cloud Builds
+              </h3>
+              <p className="text-slate-300 text-sm">
+                Compile in the cloud, flash directly to your device—no local
+                setup required.
+              </p>
+            </div>
           </div>
         </div>
 
