@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "generate:versions": "node scripts/generate-versions.js",
+    "generate:versions": "node scripts/generate-versions.js && biome format src/constants/versions.ts  --write",
     "dev": "bun run generate:versions && vite",
     "build": "bun run generate:versions && tsc && vite build",
     "lint": "biome lint",
