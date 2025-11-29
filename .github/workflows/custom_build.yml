@@ -54,6 +54,17 @@ jobs:
           EOF
           chmod +x /tmp/update_status.sh
 
+      - name: Update Status - Setting Up Python
+        shell: bash
+        run: |
+          source /tmp/update_status.sh
+          update_status setting_up_python
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
       - name: Update Status - Fetching Mesh Forge
         shell: bash
         run: |
@@ -111,10 +122,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: MeshEnvy/mpm
-          ref: ${{ inputs.version }}
           path: mpm
-          submodules: recursive
           fetch-depth: 1
+
+      - name: Update Status - Fetching Mesh Package Manager
+        shell: bash
+        run: |
+          source /tmp/update_status.sh
+          update_status checking_out_mpm
 
       - name: Install Python Requirements
         working-directory: firmware
@@ -136,17 +151,6 @@ jobs:
           key: ${{ runner.os }}-pio-${{ hashFiles('firmware/platformio.ini') }}
           restore-keys: |
             ${{ runner.os }}-pio-
-
-      - name: Update Status - Setting Up Python
-        shell: bash
-        run: |
-          source /tmp/update_status.sh
-          update_status setting_up_python
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
 
       - name: Update Status - Installing PlatformIO
         shell: bash
