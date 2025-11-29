@@ -3,7 +3,8 @@
 	url = https://github.com/meshtastic/web-flasher
 [submodule "vendor/firmware"]
 	path = vendor/firmware
-	url = https://github.com/meshtastic/firmware.git
+	url = https://github.com/MeshEnvy/firmware.git
+	branch = meshenvy/module-registry
 [submodule "vendor/api"]
 	path = vendor/api
 	url = https://github.com/meshtastic/api.git
