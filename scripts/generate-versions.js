@@ -11,6 +11,9 @@ const OUTPUT_FILE = path.resolve(__dirname, '../src/constants/versions.ts');
 
 function getVersions() {
     try {
+        // Fetch tags from the meshtastic remote
+        execSync('git fetch meshtastic --tags', { cwd: FIRMWARE_DIR, encoding: 'utf-8' });
+        
         // Run git tag in the firmware directory
         const output = execSync('git tag', { cwd: FIRMWARE_DIR, encoding: 'utf-8' });
         
