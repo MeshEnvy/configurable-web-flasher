@@ -7,3 +7,6 @@
 [submodule "vendor/api"]
 	path = vendor/api
 	url = https://github.com/meshtastic/api.git
+[submodule "vendor/mpm"]
+	path = vendor/mpm
+	url = git@github.com:MeshEnvy/mpm.git
