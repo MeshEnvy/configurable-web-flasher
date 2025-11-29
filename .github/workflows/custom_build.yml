@@ -26,6 +26,10 @@ on:
         description: 'Convex Site URL'
         required: true
         type: string
+      plugins:
+        description: 'Space-separated plugin slugs to install'
+        required: false
+        type: string
 
 jobs:
   build:
@@ -136,6 +140,19 @@ jobs:
         run: |
           python -m pip install -r requirements.txt -t pyvendor
 
+      - name: Update Status - Installing plugins
+        if: ${{ inputs.plugins != '' }}
+        shell: bash
+        run: |
+          source /tmp/update_status.sh
+          update_status installing_plugins
+
+      - name: Install Plugins
+        if: ${{ inputs.plugins != '' }}
+        working-directory: firmware
+        run: |
+          python ./bin/mpm_pio.py install ${{ inputs.plugins }}
+
       - name: Update Status - Downloading PlatformIO Cache
         shell: bash
         run: |
@@ -175,6 +192,7 @@ jobs:
         run: |
           echo "Building for target: ${{ inputs.target }}"
           echo "Flags: ${{ inputs.flags }}"
+          echo "Plugins: ${{ inputs.plugins }}"
           
           # Inject flags into platformio.ini or environment
           export PLATFORMIO_BUILD_FLAGS="${{ inputs.flags }}"
