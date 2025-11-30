@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from 'convex/react'
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ModuleToggle } from '@/components/ModuleToggle'
 import { PluginToggle } from '@/components/PluginToggle'
@@ -35,8 +35,13 @@ const DEFAULT_TARGET =
 
 export default function BuildNew() {
   const navigate = useNavigate()
+  const { buildHash: buildHashParam } = useParams<{ buildHash?: string }>()
   const ensureBuildFromConfig = useMutation(api.builds.ensureBuildFromConfig)
   const pluginFlashCounts = useQuery(api.plugins.getAll) ?? {}
+  const sharedBuild = useQuery(
+    api.builds.getByHash,
+    buildHashParam ? { buildHash: buildHashParam } : 'skip'
+  )
 
   const STORAGE_KEY = 'quick_build_target'
   const persistTargetSelection = (targetId: string) => {
@@ -59,6 +64,7 @@ export default function BuildNew() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [showModuleOverrides, setShowModuleOverrides] = useState(false)
   const [showPlugins, setShowPlugins] = useState(true)
+  const [isLoadingSharedBuild, setIsLoadingSharedBuild] = useState(false)
 
   useEffect(() => {
     if (!activeCategory && TARGET_CATEGORIES.length > 0) {
@@ -110,6 +116,67 @@ export default function BuildNew() {
       console.error('Failed to initialize target storage', error)
     }
   }, [selectedTarget])
+
+  // Pre-populate form from shared build
+  useEffect(() => {
+    if (!buildHashParam) return
+    if (sharedBuild === undefined) {
+      setIsLoadingSharedBuild(true)
+      return
+    }
+    setIsLoadingSharedBuild(false)
+
+    if (!sharedBuild) {
+      setErrorMessage(
+        'Build not found. The shared build may have been deleted.'
+      )
+      toast.error('Build not found', {
+        description: 'The shared build could not be loaded.',
+      })
+      return
+    }
+
+    const config = sharedBuild.config
+
+    // Set target and category
+    if (config.target && TARGETS[config.target]) {
+      setSelectedTarget(config.target)
+      const category = TARGETS[config.target].category || 'Other'
+      if (TARGET_CATEGORIES.includes(category)) {
+        setActiveCategory(category)
+      }
+    }
+
+    // Set version
+    if (
+      config.version &&
+      (VERSIONS as readonly string[]).includes(config.version)
+    ) {
+      setSelectedVersion(config.version as (typeof VERSIONS)[number])
+    }
+
+    // Set module config (already in the correct format)
+    if (config.modulesExcluded) {
+      setModuleConfig(config.modulesExcluded)
+      if (Object.keys(config.modulesExcluded).length > 0) {
+        setShowModuleOverrides(true)
+      }
+    }
+
+    // Set plugin config (convert array to object format)
+    if (config.pluginsEnabled && config.pluginsEnabled.length > 0) {
+      const pluginObj: Record<string, boolean> = {}
+      config.pluginsEnabled.forEach((pluginId) => {
+        // Extract slug from "slug@version" format if present
+        const slug = pluginId.includes('@') ? pluginId.split('@')[0] : pluginId
+        if (slug in registryData) {
+          pluginObj[slug] = true
+        }
+      })
+      setPluginConfig(pluginObj)
+      setShowPlugins(true)
+    }
+  }, [buildHashParam, sharedBuild])
 
   const moduleCount = Object.keys(moduleConfig).length
   const pluginCount = Object.keys(pluginConfig).filter(
@@ -175,6 +242,19 @@ export default function BuildNew() {
   }
 
   const isFlashDisabled = !selectedTarget || isFlashing
+
+  if (isLoadingSharedBuild) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Loader2 className="w-8 h-8 animate-spin text-cyan-500 mx-auto" />
+          <p className="text-slate-400">
+            Loading shared build configuration...
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 md:p-10">

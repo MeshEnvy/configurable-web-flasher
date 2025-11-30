@@ -40,6 +40,7 @@ function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/browse" element={<Browse />} />
+          <Route path="/builds/new/:buildHash" element={<BuildNew />} />
           <Route path="/builds/new" element={<BuildNew />} />
           <Route path="/builds/:buildHash" element={<BuildProgress />} />
           <Route path="/profiles/:id" element={<ProfileDetail />} />
@@ -53,6 +54,7 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/browse" element={<Browse />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/builds/new/:buildHash" element={<BuildNew />} />
           <Route path="/builds/new" element={<BuildNew />} />
           <Route path="/builds/:buildHash" element={<BuildProgress />} />
           <Route

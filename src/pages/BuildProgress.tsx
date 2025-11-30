@@ -1,8 +1,9 @@
 import { useMutation, useQuery } from 'convex/react'
 import { pick } from 'convex-helpers'
-import { ArrowLeft, CheckCircle, Loader2, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Loader2, Share2, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { humanizeStatus } from '@/lib/utils'
 import { api } from '../../convex/_generated/api'
@@ -25,6 +26,7 @@ export default function BuildProgress() {
   const [sourceDownloadError, setSourceDownloadError] = useState<string | null>(
     null
   )
+  const [shareUrlCopied, setShareUrlCopied] = useState(false)
 
   if (!buildHash) {
     return (
@@ -129,6 +131,21 @@ export default function BuildProgress() {
       ? `https://github.com/MeshEnvy/configurable-web-flasher/actions/runs/${build.githubRunId}`
       : null
 
+  const shareUrl = `${window.location.origin}/builds/new/${build.buildHash}`
+
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setShareUrlCopied(true)
+      toast.success('Share link copied to clipboard')
+      setTimeout(() => setShareUrlCopied(false), 2000)
+    } catch {
+      toast.error('Failed to copy link', {
+        description: 'Please copy the URL manually',
+      })
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-8">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -140,40 +157,46 @@ export default function BuildProgress() {
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Quick Build
           </Link>
-          <p className="text-sm text-slate-500 font-mono break-all">
-            Hash: {build.buildHash}
-          </p>
         </div>
 
         <div className="bg-slate-900/60 rounded-lg border border-slate-800 p-6 space-y-4">
-          <div className="flex items-center gap-4">
-            {getStatusIcon()}
-            <div>
-              <p className="text-sm uppercase tracking-wide text-slate-500">
-                Target
-              </p>
-              <h2 className="text-2xl font-semibold">{targetLabel}</h2>
-              <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
-                <span className={getStatusColor()}>
-                  {humanizeStatus(status)}
-                </span>
-                <span>•</span>
-                <span>{new Date(build.updatedAt).toLocaleString()}</span>
-                {githubActionUrl && (
-                  <>
-                    <span>•</span>
-                    <a
-                      href={githubActionUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-slate-500 hover:text-slate-300"
-                    >
-                      View run
-                    </a>
-                  </>
-                )}
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              {getStatusIcon()}
+              <div>
+                <p className="text-sm uppercase tracking-wide text-slate-500">
+                  Target
+                </p>
+                <h2 className="text-2xl font-semibold">{targetLabel}</h2>
+                <div className="flex items-center gap-2 text-slate-400 mt-1 text-sm">
+                  <span className={getStatusColor()}>
+                    {humanizeStatus(status)}
+                  </span>
+                  <span>•</span>
+                  <span>{new Date(build.updatedAt).toLocaleString()}</span>
+                  {githubActionUrl && (
+                    <>
+                      <span>•</span>
+                      <a
+                        href={githubActionUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-slate-500 hover:text-slate-300"
+                      >
+                        View run
+                      </a>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
+            <Button
+              onClick={handleShare}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              <Share2 className="w-4 h-4 mr-2" />
+              {shareUrlCopied ? 'Copied!' : 'Share Build'}
+            </Button>
           </div>
 
           {status !== 'success' && status !== 'failure' && (
