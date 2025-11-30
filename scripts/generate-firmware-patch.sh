@@ -31,12 +31,24 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
   exit 1
 fi
 
-# Check for uncommitted changes
+# Check for uncommitted changes and stash if needed
+STASHED=false
 if ! git diff-index --quiet HEAD --; then
-  echo -e "${YELLOW}Warning: Uncommitted changes detected in vendor/firmware${NC}"
-  echo "Please commit or stash your changes before generating the patch."
-  exit 1
+  echo -e "${YELLOW}Uncommitted changes detected, stashing...${NC}"
+  git stash push -m "Auto-stashed by generate-firmware-patch.sh"
+  STASHED=true
 fi
+
+# Cleanup function to restore stash if needed
+cleanup() {
+  if [ "$STASHED" = true ]; then
+    echo -e "${YELLOW}Restoring stashed changes...${NC}"
+    git stash pop || true
+  fi
+}
+
+# Set trap to cleanup on exit
+trap cleanup EXIT
 
 # Ensure we're on the meshenvy/module-registry branch
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -91,6 +103,13 @@ git diff develop..meshenvy/module-registry > "$PATCH_FILE"
 if [ $? -eq 0 ]; then
   PATCH_SIZE=$(wc -l < "$PATCH_FILE")
   echo -e "${GREEN}Successfully generated firmware-patch.diff (${PATCH_SIZE} lines)${NC}"
+  
+  # Restore stashed changes if we stashed them
+  if [ "$STASHED" = true ]; then
+    echo -e "${YELLOW}Restoring stashed changes...${NC}"
+    git stash pop || true
+    STASHED=false  # Clear flag so trap doesn't try again
+  fi
 else
   echo -e "${RED}Error: Failed to generate patch file${NC}"
   exit 1
